@@ -1,0 +1,5 @@
+#!/bin/sh
+if cat $1
+then echo "found"
+fi
+

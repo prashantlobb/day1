@@ -1,0 +1,2 @@
+echo "vi test"
+

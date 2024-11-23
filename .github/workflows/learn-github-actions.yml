@@ -1,13 +1,68 @@
-name: learn-github-actions
-run-name: ${{ github.actor }} is learning GitHub Actions
-on: [push]
+name: auto-deploy-staging
+on:
+    pull_request:
+        branches:
+            - ED-5724-Trucker-IOS-ios-automation-with-fastlane
+        types:
+            - closed
 jobs:
-  check-bats-version:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v3
-        with:
-          node-version: '14'
-      - run: npm install -g bats
-      - run: bats -v
+    build-and-push:
+        runs-on: macos-latest
+        if: github.event.pull_request.merged == true
+        env:
+            ENV: staging
+            SUPRSEND_WORKSPACE_KEY: ${{ secrets.STAGING_SUPRSEND_WORKSPACE_KEY }}
+            SUPRSEND_WORKSPACE_SECRET: ${{ secrets.STAGING_SUPRSEND_WORKSPACE_SECRET }}
+            APP_VERSION: 1
+            MYAPP_UPLOAD_STORE_FILE: ${{ secrets.STAGING_MYAPP_UPLOAD_STORE_FILE}}
+            UPLOAD_KEY_ALIAS: ${{secrets.STAGING_MYAPP_UPLOAD_KEY_ALIAS}}
+            MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.STAGING_MYAPP_UPLOAD_STORE_PASSWORD }}
+            MYAPP_UPLOAD_KEY_PASSWORD: ${{secrets.STAGING_MYAPP_UPLOAD_KEY_PASSWORD}}
+            FIREBASE_TOKEN: ${{secrets.STAGING_FIREBASE_TOKEN}}
+            APP_ID: ${{secrets.STAGING_MOBILESDK_APP_ID}}
+            GOOGLE_API_KEY: ${{secrets.STAGING_GOOGLE_MAPS_API_KEY}}
+            POSTHOG_API_KEY: ${{secrets.STAGING_POSTHOG_API_KEY}}
+            AWS_REGION: ${{secrets.STAGING_AWS_REGION}}
+            AWS_ACCESS_KEY_ID: ${{secrets.STAGING_AWS_ACCESS_KEY_ID}}
+            AWS_SECRET_ACCESS_KEY: ${{secrets.STAGING_AWS_SECRET_ACCESS_KEY}}
+            APP_CONFIG_APP_IDENTIFIER: ${{secrets.STAGING_APP_CONFIG_APP_IDENTIFIER}}
+            APP_CONFIG_CONFIG_PROFILE_IDENTIFIER: ${{secrets.STAGING_APP_CONFIG_CONFIG_PROFILE_IDENTIFIER}}
+            APP_CONFIG_ENVIRONMENT_IDENTIFIER: ${{secrets.STAGING_APP_CONFIG_ENVIRONMENT_IDENTIFIER}}
+            TRACKING_LINK_APP: ${{secrets.STAGING_TRACKING_LINK_APP}}
+
+        steps:
+            - uses: actions/checkout@v3
+            - uses: actions/setup-node@v3
+              with:
+                  node-version: '16.x'
+            - name: Restore Pods cache
+              uses: actions/cache@v3
+              with:
+                 path: |
+                     ios/Pods
+                     ~/Library/Caches/CocoaPods
+                     ~/.cocoapods
+              key: ${{ runner.os }}-pods-${{ hashFiles('ios/Podfile.lock') }}
+              restore-keys: |
+                    ${{ runner.os }}-pods-
+            - name: Install pod dependencies
+              run: cd ios && pod install && cd ..
+            - name: download GoogleService-Info file to ios/LobbTruckV3
+              run: url=$(curl -H "x-api-key:${{secrets.API_KEY}}" https://api.lobb.in/mobile-ci-params/download-url?app=GoogleService-Info) && url=$(echo "$url" | xargs) && filename="GoogleService-Info.plist" && wget --trust-server-names "$url" -O "ios/LobbTruckV3/$filename"
+            - name: Build iOS (Release)
+              uses: yukiarrr/ios-build-action@v1.5.0
+              with:
+                  project-path: ios/LobbTruckV3.xcodeproj
+                  p12-base64: ${{ secrets.STAGING_IOS_P12_BASE64 }}
+                  mobileprovision-base64: ${{ secrets.STAGING_IOS_MOBILEPROVISION_BASE64 }}
+                  code-signing-identity: "Apple Distribution"
+                  certificate-password: ${{ secrets.STAGING_IOS_CERTIFICATE_PASSWORD }}
+                  team-id: ${{ secrets.IOS_TEAM_ID }}
+                  workspace-path: ios/LobbTruckV3.xcworkspace
+                  output-path: "LobbTruckV3.ipa"
+            - name: Upload build
+              uses: actions/upload-artifact@v3
+              with:
+                  name: "LobbTruckV3.ipa"
+                  path: "LobbTruckV3.ipa"
+
